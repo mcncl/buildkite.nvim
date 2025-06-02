@@ -55,4 +55,4 @@ jobs:
       
       - name: Run luacheck
         run: |
-          luacheck lua/ --globals vim --read-globals-from-std
+          luacheck lua/ --globals vim
