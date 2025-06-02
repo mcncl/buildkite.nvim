@@ -36,6 +36,8 @@ jobs:
         run: |
           mkdir -p ~/.local/share/nvim/site/pack/deps/start
           git clone https://github.com/nvim-lua/plenary.nvim ~/.local/share/nvim/site/pack/deps/start/plenary.nvim
+          # Link the plugin itself to the runtime path
+          ln -s $(pwd) ~/.local/share/nvim/site/pack/deps/start/buildkite.nvim
       
       - name: Run basic syntax check
         run: |
@@ -51,7 +53,7 @@ jobs:
       
       - name: Test health check
         run: |
-          nvim --headless -c "lua require('health.buildkite').check()" -c "qa!"
+          nvim --headless -c "checkhealth buildkite" -c "qa!"
 
   lint:
     runs-on: ubuntu-latest
