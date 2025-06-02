@@ -528,46 +528,6 @@ Use the debug commands for troubleshooting:
 :Buildkite debug config              " Show current configuration
 ```
 
-## Releases and Version Management
-
-### Stable Releases
-
-This plugin follows [ZeroVer](https://0ver.org/) (0-based versioning). Each release is tagged and available on the [Releases page](https://github.com/mcncl/buildkite.nvim/releases).
-
-**Version Types:**
-- **Minor** (v0.2.0): New features, may include breaking changes
-- **Patch** (v0.1.1): Bug fixes, backward compatible
-- **Pre-release** (v0.2.0-beta.1): Testing versions
-
-### Installation Strategies
-
-**For Production Use (Recommended):**
-```lua
-{
-  "mcncl/buildkite.nvim",
-  version = "*",  -- Always use latest stable release
-  dependencies = { "nvim-lua/plenary.nvim" },
-}
-```
-
-**For Testing New Features:**
-```lua
-{
-  "mcncl/buildkite.nvim",
-  -- No version specified = latest commit (may be unstable)
-  dependencies = { "nvim-lua/plenary.nvim" },
-}
-```
-
-**For Maximum Stability:**
-```lua
-{
-  "mcncl/buildkite.nvim",
-  version = "v0.1.0",  -- Pin to specific tested version
-  dependencies = { "nvim-lua/plenary.nvim" },
-}
-```
-
 ### Release Notes
 
 Check the [Releases page](https://github.com/mcncl/buildkite.nvim/releases) for:
