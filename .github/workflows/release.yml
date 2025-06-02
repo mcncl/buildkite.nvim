@@ -21,9 +21,27 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Install Neovim
-        uses: rhymond/setup-neovim@v1
-        with:
-          neovim-version: ${{ matrix.nvim-version }}
+        run: |
+          if [ "${{ matrix.nvim-version }}" = "stable" ]; then
+            DOWNLOAD_URL="https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.appimage"
+          else
+            DOWNLOAD_URL="https://github.com/neovim/neovim/releases/download/${{ matrix.nvim-version }}/nvim.appimage"
+          fi
+          
+          curl -L $DOWNLOAD_URL -o nvim.appimage
+          chmod +x nvim.appimage
+          
+          # Extract AppImage instead of running directly
+          ./nvim.appimage --appimage-extract
+          sudo mv squashfs-root /usr/local/
+          sudo ln -sf /usr/local/squashfs-root/usr/bin/nvim /usr/local/bin/nvim
+      
+      - name: Install dependencies
+        run: |
+          mkdir -p ~/.local/share/nvim/site/pack/deps/start
+          git clone https://github.com/nvim-lua/plenary.nvim ~/.local/share/nvim/site/pack/deps/start/plenary.nvim
+          # Link the plugin itself to the runtime path
+          ln -s $(pwd) ~/.local/share/nvim/site/pack/deps/start/buildkite.nvim
       
       - name: Run health check
         run: |
