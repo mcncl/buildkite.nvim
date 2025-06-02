@@ -21,15 +21,38 @@ local function create_selection_menu(items, prompt, format_fn)
 end
 
 -- Helper function to get current project info
-local function get_project_info(cwd)
+-- Get effective branch (manual override or Git-detected)
+local function get_effective_branch(cwd)
+    -- First check for manual branch override
+    local manual_branch = config_module.get_project_branch(cwd)
+    if manual_branch then
+        return manual_branch, "manual"
+    end
+    
+    -- Fall back to Git detection
+    local git_branch = git.get_current_branch(cwd)
+    if git_branch then
+        return git_branch, "git"
+    end
+    
+    return nil, "none"
+end
+
+-- Helper function to get project information
+function get_project_info(cwd)
     cwd = cwd or vim.fn.getcwd()
-    local branch = git.get_current_branch(cwd)
+    local branch, branch_source = get_effective_branch(cwd)
+    local git_branch = git.get_current_branch(cwd)
+    local manual_branch = config_module.get_project_branch(cwd)
     local repo_name = git.get_repo_name(cwd)
     local org_name, pipeline_slug = config_module.get_project_pipeline(cwd)
     
     return {
         cwd = cwd,
         branch = branch,
+        branch_source = branch_source,
+        git_branch = git_branch,
+        manual_branch = manual_branch,
         repo_name = repo_name,
         org_name = org_name,
         pipeline_slug = pipeline_slug,
@@ -182,7 +205,13 @@ function M.debug_config()
     table.insert(lines, "=== Current Project ===")
     table.insert(lines, string.format("Directory: %s", project_info.cwd))
     table.insert(lines, string.format("Git repo: %s", project_info.is_git_repo and "yes" or "no"))
-    table.insert(lines, string.format("Branch: %s", project_info.branch or "unknown"))
+    table.insert(lines, string.format("Effective branch: %s (%s)", project_info.branch or "unknown", project_info.branch_source))
+    if project_info.git_branch then
+        table.insert(lines, string.format("Git branch: %s", project_info.git_branch))
+    end
+    if project_info.manual_branch then
+        table.insert(lines, string.format("Manual branch override: %s", project_info.manual_branch))
+    end
     table.insert(lines, string.format("Configured org: %s", project_info.org_name or "none"))
     table.insert(lines, string.format("Configured pipeline: %s", project_info.pipeline_slug or "none"))
     
@@ -325,18 +354,13 @@ end
 function M.show_current_build()
     local project_info = get_project_info()
     
-    if not project_info.is_git_repo then
-        vim.notify("Current directory is not a git repository", vim.log.levels.WARN)
-        return
-    end
-    
     if not project_info.org_name or not project_info.pipeline_slug then
         vim.notify("No pipeline configured. Use :Buildkite pipeline set", vim.log.levels.WARN)
         return
     end
     
     if not project_info.branch then
-        vim.notify("Could not determine current git branch", vim.log.levels.WARN)
+        vim.notify("Could not determine current branch. Use :Buildkite branch set to set manually", vim.log.levels.WARN)
         return
     end
     
@@ -489,18 +513,13 @@ end
 function M.rebuild_current_build()
     local project_info = get_project_info()
     
-    if not project_info.is_git_repo then
-        vim.notify("Current directory is not a git repository", vim.log.levels.WARN)
-        return
-    end
-    
     if not project_info.org_name or not project_info.pipeline_slug then
         vim.notify("No pipeline configured. Use :Buildkite pipeline set", vim.log.levels.WARN)
         return
     end
     
     if not project_info.branch then
-        vim.notify("Could not determine current git branch", vim.log.levels.WARN)
+        vim.notify("Could not determine current branch. Use :Buildkite branch set to set manually", vim.log.levels.WARN)
         return
     end
     
@@ -537,6 +556,60 @@ function M.rebuild_current_build()
     -- Immediately refresh the status line to show the new build
     local buildkite = require("buildkite")
     buildkite.refresh_current_build()
+end
+
+-- Set manual branch override
+function M.set_branch(branch_name)
+    if not branch_name or branch_name == "" then
+        vim.ui.input({
+            prompt = "Enter branch name: ",
+        }, function(input)
+            if input and input ~= "" then
+                M.set_branch(input)
+            end
+        end)
+        return
+    end
+    
+    local success, err = config_module.set_project_branch(branch_name)
+    if success then
+        vim.notify(string.format("Manual branch set to: %s", branch_name), vim.log.levels.INFO)
+        -- Clear build cache since branch changed
+        local buildkite = require("buildkite")
+        buildkite.clear_build_cache()
+    else
+        vim.notify("Failed to set branch: " .. (err or "unknown error"), vim.log.levels.ERROR)
+    end
+end
+
+-- Unset manual branch override
+function M.unset_branch()
+    local success, err = config_module.unset_project_branch()
+    if success then
+        vim.notify("Manual branch override removed", vim.log.levels.INFO)
+        -- Clear build cache since branch changed
+        local buildkite = require("buildkite")
+        buildkite.clear_build_cache()
+    else
+        vim.notify("Failed to unset branch: " .. (err or "unknown error"), vim.log.levels.ERROR)
+    end
+end
+
+-- Show current branch information
+function M.show_branch_info()
+    local project_info = get_project_info()
+    
+    if project_info.branch then
+        local status_msg = string.format("Current branch: %s (source: %s)", project_info.branch, project_info.branch_source)
+        
+        if project_info.branch_source == "manual" and project_info.git_branch then
+            status_msg = status_msg .. string.format("\nGit branch: %s", project_info.git_branch)
+        end
+        
+        vim.notify(status_msg, vim.log.levels.INFO)
+    else
+        vim.notify("No branch detected or configured", vim.log.levels.WARN)
+    end
 end
 
 -- Setup command autocompletions and main command
@@ -596,6 +669,17 @@ function M.setup_commands()
             else
                 vim.notify("Usage: :Buildkite build [current|list|open|refresh|rebuild] [branch] [limit]", vim.log.levels.INFO)
             end
+        elseif cmd == "branch" then
+            local subcmd = args[2]
+            if subcmd == "set" then
+                M.set_branch(args[3])
+            elseif subcmd == "unset" then
+                M.unset_branch()
+            elseif subcmd == "info" then
+                M.show_branch_info()
+            else
+                vim.notify("Usage: :Buildkite branch [set|unset|info] [branch_name]", vim.log.levels.INFO)
+            end
         else
             local help = {
                 "Buildkite.nvim commands:",
@@ -612,6 +696,9 @@ function M.setup_commands()
                 "  :Buildkite build open                 - Open build in browser",
                 "  :Buildkite build refresh              - Refresh current build status",
                 "  :Buildkite build rebuild              - Rebuild current branch build",
+                "  :Buildkite branch set [name]          - Set manual branch override",
+                "  :Buildkite branch unset               - Remove manual branch override",
+                "  :Buildkite branch info                - Show current branch information",
                 "  :Buildkite debug config               - Show debug information",
                 "  :Buildkite debug reset                - Reset all configuration"
             }
@@ -632,7 +719,7 @@ function M.setup_commands()
             if arg_count == 1 then
                 return vim.tbl_filter(function(item)
                     return vim.startswith(item, ArgLead)
-                end, {"org", "pipeline", "build", "debug"})
+                end, {"org", "pipeline", "build", "branch", "debug"})
             elseif arg_count == 2 then
                 if args[1] == "org" then
                     return vim.tbl_filter(function(item)
@@ -646,6 +733,10 @@ function M.setup_commands()
                     return vim.tbl_filter(function(item)
                         return vim.startswith(item, ArgLead)
                     end, {"current", "list", "open", "refresh", "rebuild"})
+                elseif args[1] == "branch" then
+                    return vim.tbl_filter(function(item)
+                        return vim.startswith(item, ArgLead)
+                    end, {"set", "unset", "info"})
                 elseif args[1] == "debug" then
                     return vim.tbl_filter(function(item)
                         return vim.startswith(item, ArgLead)
