@@ -51,7 +51,7 @@ jobs:
       
       - name: Test health check
         run: |
-          nvim --headless -c "lua require('buildkite.health').check()" -c "qa!"
+          nvim --headless -c "lua require('health.buildkite').check()" -c "qa!"
 
   lint:
     runs-on: ubuntu-latest
