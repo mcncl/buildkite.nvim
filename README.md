@@ -49,6 +49,9 @@ A Neovim plugin for interacting with Buildkite CI/CD pipelines directly from you
     { "<leader>br", function() require("buildkite.commands").rebuild_current_build() end, desc = "Rebuild build" },
     { "<leader>bp", function() require("buildkite.commands").set_pipeline() end, desc = "Set pipeline" },
     { "<leader>bs", function() require("buildkite.commands").switch_organization() end, desc = "Switch org" },
+    { "<leader>bbs", function() require("buildkite.commands").set_branch() end, desc = "Set branch" },
+    { "<leader>bbu", function() require("buildkite.commands").unset_branch() end, desc = "Unset branch" },
+    { "<leader>bbi", function() require("buildkite.commands").show_branch_info() end, desc = "Branch info" },
   },
   config = function()
     require("buildkite").setup({
@@ -176,7 +179,10 @@ require("buildkite").setup({
       set_pipeline = "p",
       org_list = "ol",
       org_switch = "os",
-    }
+      branch_set = "bs",
+      branch_unset = "bu",
+      branch_info = "bi",
+  }
   },
   auto_setup = {
     enabled = true,
@@ -206,6 +212,14 @@ require("buildkite").setup({
 :Buildkite pipeline set [name]        " Set pipeline for current project
 :Buildkite pipeline unset             " Remove pipeline for current project
 :Buildkite pipeline info              " Show current project's pipeline
+```
+
+### Branch Management
+
+```vim
+:Buildkite branch set [name]          " Set manual branch override
+:Buildkite branch unset               " Remove manual branch override
+:Buildkite branch info                " Show current branch information
 ```
 
 ### Build Information
@@ -239,6 +253,9 @@ With the default keymap prefix `<leader>bk`:
 - `<leader>bkp` - Set pipeline
 - `<leader>bkol` - List organizations
 - `<leader>bkos` - Switch organization
+- `<leader>bkbs` - Set branch
+- `<leader>bkbu` - Unset branch
+- `<leader>bkbi` - Show branch info
 
 ### Custom Keymaps
 
@@ -253,6 +270,9 @@ require("buildkite").setup({
 -- Then define your own keymaps
 vim.keymap.set('n', '<leader>bc', function() require("buildkite.commands").show_current_build() end, { desc = "Buildkite: Current build" })
 vim.keymap.set('n', '<leader>bl', function() require("buildkite.commands").show_builds() end, { desc = "Buildkite: List builds" })
+vim.keymap.set('n', '<leader>bs', function() require("buildkite.commands").set_branch() end, { desc = "Buildkite: Set branch" })
+vim.keymap.set('n', '<leader>bu', function() require("buildkite.commands").unset_branch() end, { desc = "Buildkite: Unset branch" })
+vim.keymap.set('n', '<leader>bi', function() require("buildkite.commands").show_branch_info() end, { desc = "Buildkite: Branch info" })
 -- ... add more as needed
 ```
 
@@ -373,12 +393,33 @@ end
 
 ## Project Configuration
 
-The plugin automatically saves pipeline configurations per project in your Neovim data directory:
+The plugin automatically saves configurations per project in your Neovim data directory:
 
 - Global config: `~/.local/share/nvim/buildkite.nvim/config.json`
 - Project configs: `~/.local/share/nvim/buildkite.nvim/projects/`
 
-Each git repository gets its own configuration based on the working directory path.
+Each project gets its own configuration based on the working directory path, including:
+- Pipeline configuration (organization and pipeline slug)
+- Manual branch override (if set)
+
+### Manual Branch Override
+
+By default, the plugin uses your Git branch to determine which Buildkite builds to show. However, you can override this behavior:
+
+**Use Cases:**
+- Working in a non-Git directory but wanting to monitor builds
+- Local branch name differs from the Buildkite branch name
+- Monitoring a different branch while working on another
+- Working in detached HEAD state
+
+**Commands:**
+```vim
+:Buildkite branch set main            " Monitor 'main' branch builds
+:Buildkite branch info               " Show current effective branch
+:Buildkite branch unset              " Remove override, use Git branch
+```
+
+The manual branch override is saved per-project, so different projects can have different branch settings.
 
 ## Environment Variables
 
@@ -428,6 +469,7 @@ Check if everything is configured correctly:
 4. **"Could not determine current git branch"**
    - Make sure you're in a git repository
    - Check that git is available in your PATH
+   - Use `:Buildkite branch set <branch_name>` to manually specify a branch
 
 ### Debug Information
 
