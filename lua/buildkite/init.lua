@@ -58,6 +58,9 @@ local default_config = {
             set_pipeline = "p",
             org_list = "ol",
             org_switch = "os",
+            branch_set = "bs",
+            branch_unset = "bu",
+            branch_info = "bi",
         }
     },
     auto_setup = {
@@ -184,6 +187,24 @@ function M.setup_keymaps(keymap_config)
             commands.switch_organization()
         end, "Switch organization")
     end
+
+    if mappings.branch_set then
+        map(mappings.branch_set, function()
+            commands.set_branch()
+        end, "Set branch")
+    end
+
+    if mappings.branch_unset then
+        map(mappings.branch_unset, function()
+            commands.unset_branch()
+        end, "Unset branch")
+    end
+
+    if mappings.branch_info then
+        map(mappings.branch_info, function()
+            commands.show_branch_info()
+        end, "Show branch info")
+    end
 end
 
 -- Setup autocommands
@@ -246,15 +267,21 @@ function M.get_current_build()
     local git = require("buildkite.git")
     local cwd = vim.fn.getcwd()
 
-    -- Check if we're in a git repository
-    if not git.is_git_repo(cwd) then
-        return nil, "Not a git repository"
-    end
-
-    -- Get current branch
-    local branch = git.get_current_branch(cwd)
-    if not branch then
-        return nil, "Could not determine current git branch"
+    -- Get effective branch (manual override or Git-detected)
+    local manual_branch = config_module.get_project_branch(cwd)
+    local branch
+    if manual_branch then
+        branch = manual_branch
+    else
+        -- Check if we're in a git repository for fallback
+        if not git.is_git_repo(cwd) then
+            return nil, "Not a git repository and no manual branch set"
+        end
+        
+        branch = git.get_current_branch(cwd)
+        if not branch then
+            return nil, "Could not determine current git branch and no manual branch set"
+        end
     end
 
     -- Get project pipeline configuration
