@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        nvim-version: ['v0.7.0', 'v0.8.0', 'v0.9.0', 'stable']
+        nvim-version: ['v0.7.0', 'v0.8.0', 'v0.9.0', 'v0.10.0', 'stable']
     
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +19,7 @@ jobs:
       - name: Install Neovim
         run: |
           if [ "${{ matrix.nvim-version }}" = "stable" ]; then
-            DOWNLOAD_URL="https://github.com/neovim/neovim/releases/latest/download/nvim.appimage"
+            DOWNLOAD_URL="https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.appimage"
           else
             DOWNLOAD_URL="https://github.com/neovim/neovim/releases/download/${{ matrix.nvim-version }}/nvim.appimage"
           fi
