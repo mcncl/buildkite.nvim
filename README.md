@@ -7,6 +7,19 @@
 
 A Neovim plugin for interacting with Buildkite CI/CD pipelines directly from your editor.
 
+## Table of Contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+  - [Using lazy.nvim](#using-lazy-nvim)
+  - [Using packer.nvim](#using-packer-nvim)
+  - [Using vim-plug](#using-vim-plug)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Features
 
 - 🚀 View build status for current git branch
@@ -28,7 +41,7 @@ A Neovim plugin for interacting with Buildkite CI/CD pipelines directly from you
 
 ## Installation
 
-### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
+### Using `lazy.nvim`
 
 **Basic Setup:**
 ```lua
@@ -98,7 +111,7 @@ A Neovim plugin for interacting with Buildkite CI/CD pipelines directly from you
 
 > **Note:** Lazy loading improves startup time by only loading the plugin when needed. The statusline integration will still work automatically once loaded.
 
-### Using [packer.nvim](https://github.com/wbthomason/packer.nvim)
+### Using `packer.nvim`
 
 ```lua
 use {
@@ -112,7 +125,7 @@ use {
 }
 ```
 
-### Using [vim-plug](https://github.com/junegunn/vim-plug)
+### Using `vim-plug`
 
 ```lua
 Plug 'nvim-lua/plenary.nvim'
