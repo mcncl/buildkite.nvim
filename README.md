@@ -417,18 +417,15 @@ Check if everything is configured correctly:
 1. **"No organizations configured"**
    - Run `:Buildkite org add` to add your first organization
 
-2. **"No current organization set"**
-   - Run `:Buildkite org add` or `:Buildkite org switch`
-
-3. **"No pipeline configured"**
+2. **"No pipeline configured"**
    - Run `:Buildkite pipeline set` in your project directory
 
-4. **"API request failed"**
+3. **"API request failed"**
    - Check your API token has the correct scopes
    - Verify the organization name is correct
    - Check your internet connection and API endpoint availability
 
-5. **"Could not determine current git branch"**
+4. **"Could not determine current git branch"**
    - Make sure you're in a git repository
    - Check that git is available in your PATH
 
