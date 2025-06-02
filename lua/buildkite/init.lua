@@ -211,29 +211,6 @@ end
 function M.setup_autocommands(config)
     local group = vim.api.nvim_create_augroup("BuildkiteNvim", { clear = true })
 
-    -- Auto-suggest pipeline when entering a git repository
-    if config.auto_setup.enabled and config.auto_setup.suggest_pipeline then
-        vim.api.nvim_create_autocmd({ "DirChanged", "VimEnter" }, {
-            group = group,
-            callback = function()
-                local git = require("buildkite.git")
-                if git.is_git_repo() then
-                    local org_name, pipeline_slug = config_module.get_project_pipeline()
-                    if not org_name or not pipeline_slug then
-                        -- Check if we have any organizations configured
-                        local orgs = config_module.list_organizations()
-                        local current_org = config_module.get_current_organization()
-                        if not vim.tbl_isempty(orgs) and current_org then
-                            -- Automatic prompt to set pipeline has been removed.
-                            -- Users can manually set a pipeline using commands or keymaps
-                            -- if they wish to configure one for the current project.
-                        end
-                    end
-                end
-            end,
-        })
-    end
-
     -- Status line integration (optional)
     if config.ui.statusline_integration then
         vim.api.nvim_create_autocmd({ "BufEnter", "DirChanged" }, {
@@ -277,7 +254,7 @@ function M.get_current_build()
         if not git.is_git_repo(cwd) then
             return nil, "Not a git repository and no manual branch set"
         end
-        
+
         branch = git.get_current_branch(cwd)
         if not branch then
             return nil, "Could not determine current git branch and no manual branch set"
@@ -336,7 +313,7 @@ function M.get_current_build()
             lualine.refresh()
         end
     end, 100) -- Small delay to avoid blocking startup
-    
+
     -- Store timer handle for cleanup
     pending_timers[cache_key] = timer
 
