@@ -228,7 +228,7 @@ function M.setup_autocommands(config)
         callback = function()
             -- Cancel all pending timers
             for cache_key, timer in pairs(pending_timers) do
-                if timer then
+                if timer and type(timer) == "number" then
                     vim.fn.timer_stop(timer)
                 end
             end
