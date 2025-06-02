@@ -26,7 +26,11 @@ jobs:
           
           curl -L $DOWNLOAD_URL -o nvim.appimage
           chmod +x nvim.appimage
-          sudo mv nvim.appimage /usr/local/bin/nvim
+          
+          # Extract AppImage instead of running directly
+          ./nvim.appimage --appimage-extract
+          sudo mv squashfs-root /usr/local/
+          sudo ln -sf /usr/local/squashfs-root/usr/bin/nvim /usr/local/bin/nvim
       
       - name: Install dependencies
         run: |
