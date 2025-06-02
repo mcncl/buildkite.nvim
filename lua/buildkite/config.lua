@@ -283,6 +283,7 @@ function M.save_project_config(config, cwd)
     local project_config = {
         organization = config.organization,
         pipeline = config.pipeline,
+        branch = config.branch,
         cwd = config.cwd,
     }
     
@@ -383,6 +384,27 @@ end
 function M.get_project_pipeline(cwd)
     local project_config = M.load_project_config(cwd)
     return project_config.organization, project_config.pipeline
+end
+
+-- Set manual branch override for current project
+function M.set_project_branch(branch_name, cwd)
+    local project_config = M.load_project_config(cwd)
+    project_config.branch = branch_name
+    project_config.cwd = cwd or vim.fn.getcwd()
+    return M.save_project_config(project_config, cwd), nil
+end
+
+-- Get manual branch override for current project
+function M.get_project_branch(cwd)
+    local project_config = M.load_project_config(cwd)
+    return project_config.branch
+end
+
+-- Unset manual branch override for current project
+function M.unset_project_branch(cwd)
+    local project_config = M.load_project_config(cwd)
+    project_config.branch = nil
+    return M.save_project_config(project_config, cwd), nil
 end
 
 -- Unset pipeline for current project
