@@ -1,5 +1,10 @@
 # buildkite.nvim
 
+[![Latest Release](https://img.shields.io/github/v/release/mcncl/buildkite.nvim?style=flat-square)](https://github.com/mcncl/buildkite.nvim/releases)
+[![ZeroVer](https://img.shields.io/badge/version-0ver-blue?style=flat-square)](https://0ver.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![Neovim](https://img.shields.io/badge/NeoVim-%2357A143.svg?&style=flat-square&logo=neovim&logoColor=white)](https://neovim.io/)
+
 A Neovim plugin for interacting with Buildkite CI/CD pipelines directly from your editor.
 
 ## Features
@@ -36,10 +41,29 @@ A Neovim plugin for interacting with Buildkite CI/CD pipelines directly from you
 }
 ```
 
+**Version Pinning:**
+```lua
+{
+  "mcncl/buildkite.nvim",
+  version = "*",        -- Use latest release (recommended for stability)
+  -- version = "v0.1.0", -- Pin to specific version
+  dependencies = { "nvim-lua/plenary.nvim" },
+  config = function()
+    require("buildkite").setup()
+  end,
+}
+```
+
+> **Note on Versions:**
+> - No `version` specified = latest commit on main branch (bleeding edge)
+> - `version = "*"` = latest stable release (recommended)
+> - `version = "v0.1.0"` = specific version (maximum stability)
+
 **Advanced Setup with Lazy Loading and Custom Keys:**
 ```lua
 {
   "mcncl/buildkite.nvim",
+  version = "*",        -- Use latest release (recommended)
   dependencies = { "nvim-lua/plenary.nvim" },
   cmd = { "Buildkite" }, -- Load only when :Buildkite command is used
   keys = { -- Load when these keys are pressed
@@ -80,10 +104,20 @@ A Neovim plugin for interacting with Buildkite CI/CD pipelines directly from you
 use {
   "mcncl/buildkite.nvim",
   requires = { "nvim-lua/plenary.nvim" },
+  tag = "*",        -- Use latest release (recommended)
+  -- tag = "v0.1.0", -- Pin to specific version
   config = function()
     require("buildkite").setup()
   end,
 }
+```
+
+### Using [vim-plug](https://github.com/junegunn/vim-plug)
+
+```lua
+Plug 'nvim-lua/plenary.nvim'
+Plug 'mcncl/buildkite.nvim', { 'tag': '*' }  " Latest release
+" Plug 'mcncl/buildkite.nvim', { 'tag': 'v0.1.0' }  " Specific version
 ```
 
 ## Getting a Buildkite API Token
@@ -100,6 +134,8 @@ use {
 6. Copy the token for use in configuration
 
 ## Quick Start
+
+> **💡 Version Tip:** For stability, pin to a release version in your plugin manager: `version = "*"` (latest release) or `version = "v0.1.0"` (specific version).
 
 1. **Add your first organization:**
    ```vim
@@ -478,6 +514,54 @@ Use the debug commands for troubleshooting:
 ```vim
 :Buildkite debug config              " Show current configuration
 ```
+
+## Releases and Version Management
+
+### Stable Releases
+
+This plugin follows [ZeroVer](https://0ver.org/) (0-based versioning). Each release is tagged and available on the [Releases page](https://github.com/mcncl/buildkite.nvim/releases).
+
+**Version Types:**
+- **Minor** (v0.2.0): New features, may include breaking changes
+- **Patch** (v0.1.1): Bug fixes, backward compatible
+- **Pre-release** (v0.2.0-beta.1): Testing versions
+
+### Installation Strategies
+
+**For Production Use (Recommended):**
+```lua
+{
+  "mcncl/buildkite.nvim",
+  version = "*",  -- Always use latest stable release
+  dependencies = { "nvim-lua/plenary.nvim" },
+}
+```
+
+**For Testing New Features:**
+```lua
+{
+  "mcncl/buildkite.nvim",
+  -- No version specified = latest commit (may be unstable)
+  dependencies = { "nvim-lua/plenary.nvim" },
+}
+```
+
+**For Maximum Stability:**
+```lua
+{
+  "mcncl/buildkite.nvim",
+  version = "v0.1.0",  -- Pin to specific tested version
+  dependencies = { "nvim-lua/plenary.nvim" },
+}
+```
+
+### Release Notes
+
+Check the [Releases page](https://github.com/mcncl/buildkite.nvim/releases) for:
+- New features and improvements
+- Bug fixes
+- Breaking changes
+- Migration guides
 
 ## Contributing
 
