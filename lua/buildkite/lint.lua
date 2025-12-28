@@ -168,7 +168,20 @@ local function validate_step(step_node, bufnr)
       if retry_mapping then
         local retry_fields = extract_mapping(retry_mapping, bufnr)
         if retry_fields["automatic"] then
-          -- Could validate retry limit <= 10 here
+          local auto_node = retry_fields["automatic"]
+          local auto_text = get_node_text(auto_node, bufnr)
+          if auto_text then
+            local limit = auto_text:match("limit:%s*(%d+)")
+            if limit and tonumber(limit) > 10 then
+              local r, c = auto_node:range()
+              table.insert(diagnostics, {
+                row = r,
+                col = c,
+                message = "Retry limit cannot exceed 10",
+                severity = vim.diagnostic.severity.ERROR,
+              })
+            end
+          end
         end
       end
     end
