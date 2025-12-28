@@ -1,234 +1,231 @@
-local curl = require("plenary.curl")
-local config_module = require("buildkite.config")
-
 local M = {}
-local global_config = nil
 
-function M.setup(user_config)
-    global_config = config_module.setup(user_config)
-    return global_config
-end
+local BASE_URL = "https://api.buildkite.com/v2"
 
-function M.get_config()
-    if not global_config then
-        global_config = config_module.get_config()
-    end
-    return global_config
-end
+---@class BuildkiteApiError
+---@field status number HTTP status code
+---@field message string Error message
+---@field body string|nil Response body
 
-function M.request(org_name, endpoint, opts)
-    opts = opts or {}
+---@param method string HTTP method
+---@param path string API path (without base URL)
+---@param opts table|nil Options: body, org_slug
+---@param callback function Callback(err, response)
+local function request(method, path, opts, callback)
+  opts = opts or {}
+  local org_slug = opts.org_slug or require("buildkite.organizations").get_current()
 
-    local config = M.get_config()
+  if not org_slug then
+    callback({ status = 0, message = "No organization configured" }, nil)
+    return
+  end
 
-    -- Use current organization if none specified
-    if not org_name then
-        org_name = config_module.get_current_organization()
-        if not org_name then
-            error("No current organization set. Use :Buildkite org add or :Buildkite org switch")
-        end
-    end
+  local credentials = require("buildkite.credentials")
+  local cred, cred_err = credentials.get_token(org_slug)
+  if not cred then
+    callback({ status = 0, message = cred_err or "No credentials found" }, nil)
+    return
+  end
 
-    local org_config = config.organizations[org_name]
+  local curl = require("plenary.curl")
+  local url = BASE_URL .. path
 
-    if not org_config then
-        error(string.format("Organization '%s' not configured", org_name))
-    end
-
-    if not org_config.token then
-        error(string.format("No API token configured for organization '%s'", org_name))
-    end
-
-    local url = config.api.endpoint .. endpoint
-
-    local headers = {
-        Authorization = "Bearer " .. org_config.token,
-        ["Content-Type"] = "application/json",
-    }
-
-    -- Add query parameters if provided
-    if opts.params then
-        local params = {}
-        for key, value in pairs(opts.params) do
-            table.insert(params, key .. "=" .. vim.uri_encode(tostring(value)))
-        end
-        if #params > 0 then
-            url = url .. "?" .. table.concat(params, "&")
-        end
-    end
-
-    local response = curl.get(url, {
-        headers = headers,
-        timeout = config.api.timeout
-    })
-
-    if response.status ~= 200 then
-        error(string.format("API request failed with status %d: %s",
-            response.status, response.body))
-    end
-
-    -- Use vim's JSON decode since plenary.json doesn't have encode/decode
-    local ok, decoded = pcall(vim.fn.json_decode, response.body)
-    if not ok then
-        error("Failed to decode JSON response: " .. decoded)
-    end
-
-    return decoded
-end
-
-function M.get_pipelines(org_name)
-    org_name = org_name or config_module.get_current_organization()
-    return M.request(org_name, "/organizations/" .. org_name .. "/pipelines")
-end
-
-function M.get_pipeline(org_name, pipeline_slug)
-    org_name = org_name or config_module.get_current_organization()
-    return M.request(org_name, "/organizations/" .. org_name .. "/pipelines/" .. pipeline_slug)
-end
-
-function M.get_builds(org_name, pipeline_slug, opts)
-    opts = opts or {}
-    org_name = org_name or config_module.get_current_organization()
-    local endpoint = "/organizations/" .. org_name .. "/pipelines/" .. pipeline_slug .. "/builds"
-
-    return M.request(org_name, endpoint, {
-        params = opts
-    })
-end
-
-function M.get_builds_for_branch(org_name, pipeline_slug, branch, opts)
-    opts = opts or {}
-    opts.branch = branch
-    org_name = org_name or config_module.get_current_organization()
-
-    return M.get_builds(org_name, pipeline_slug, opts)
-end
-
-function M.get_latest_build_for_branch(org_name, pipeline_slug, branch)
-    org_name = org_name or config_module.get_current_organization()
-    local builds = M.get_builds_for_branch(org_name, pipeline_slug, branch, {
-        per_page = 1,
-        page = 1
-    })
-
-    if builds and #builds > 0 then
-        return builds[1]
-    end
-
-    return nil
-end
-
-function M.get_build(org_name, pipeline_slug, build_number)
-    org_name = org_name or config_module.get_current_organization()
-    local endpoint = "/organizations/" .. org_name .. "/pipelines/" .. pipeline_slug .. "/builds/" .. build_number
-    return M.request(org_name, endpoint)
-end
-
-function M.get_build_jobs(org_name, pipeline_slug, build_number)
-    org_name = org_name or config_module.get_current_organization()
-    local endpoint = "/organizations/" ..
-        org_name .. "/pipelines/" .. pipeline_slug .. "/builds/" .. build_number .. "/jobs"
-    return M.request(org_name, endpoint)
-end
-
-function M.get_latest_builds_for_org(org_name, opts)
-    opts = opts or {}
-    org_name = org_name or config_module.get_current_organization()
-
-    local pipelines = M.get_pipelines(org_name)
-    local config = M.get_config()
-    local org_config = config.organizations[org_name]
-
-    local filtered_pipelines = pipelines
-    if org_config.repositories and #org_config.repositories > 0 then
-        filtered_pipelines = {}
-        for _, pipeline in ipairs(pipelines) do
-            for _, repo in ipairs(org_config.repositories) do
-                if pipeline.slug == repo or pipeline.name == repo or
-                    (pipeline.repository and pipeline.repository.name == repo) then
-                    table.insert(filtered_pipelines, pipeline)
-                    break
-                end
+  local request_opts = {
+    url = url,
+    method = method,
+    headers = {
+      ["Authorization"] = "Bearer " .. cred.token,
+      ["Content-Type"] = "application/json",
+    },
+    callback = function(response)
+      vim.schedule(function()
+        if response.status >= 200 and response.status < 300 then
+          local body = nil
+          if response.body and response.body ~= "" then
+            local ok, decoded = pcall(vim.json.decode, response.body)
+            body = ok and decoded or response.body
+          end
+          callback(nil, { status = response.status, body = body })
+        else
+          local err_msg = "Request failed"
+          if response.body and response.body ~= "" then
+            local ok, decoded = pcall(vim.json.decode, response.body)
+            if ok and decoded and decoded.message then
+              err_msg = decoded.message
             end
+          end
+          callback({
+            status = response.status,
+            message = err_msg,
+            body = response.body,
+          }, nil)
         end
-    end
+      end)
+    end,
+  }
 
-    local results = {}
+  if opts.body then
+    request_opts.body = vim.json.encode(opts.body)
+  end
 
-    for _, pipeline in ipairs(filtered_pipelines) do
-        local build_opts = {
-            per_page = opts.per_page or 1,
-            page = 1
-        }
-
-        if opts.branch then
-            build_opts.branch = opts.branch
-        end
-
-        local builds = M.get_builds(org_name, pipeline.slug, build_opts)
-        if builds and #builds > 0 then
-            table.insert(results, {
-                pipeline = pipeline,
-                latest_build = builds[1]
-            })
-        end
-    end
-
-    return results
+  curl.request(request_opts)
 end
 
-function M.get_current_project_build(cwd, branch)
-    local org_name, pipeline_slug = config_module.get_project_pipeline(cwd)
+---List pipelines for the current organization
+---@param callback function Callback(err, pipelines)
+function M.list_pipelines(callback)
+  local org_slug = require("buildkite.organizations").get_current()
+  if not org_slug then
+    callback({ message = "No organization configured" }, nil)
+    return
+  end
 
-    if not org_name or not pipeline_slug then
-        return nil, "No pipeline configured for current project"
+  request("GET", "/organizations/" .. org_slug .. "/pipelines", {}, function(err, response)
+    if err then
+      callback(err, nil)
+    else
+      callback(nil, response.body)
     end
-
-    if not branch then
-        local git = require("buildkite.git")
-        branch = git.get_current_branch(cwd)
-        if not branch then
-            return nil, "Could not determine current git branch"
-        end
-    end
-
-    local build = M.get_latest_build_for_branch(org_name, pipeline_slug, branch)
-    return build, nil
+  end)
 end
 
-function M.rebuild(org_name, pipeline_slug, build_number)
-    org_name = org_name or config_module.get_current_organization()
-    local endpoint = "/organizations/" ..
-        org_name .. "/pipelines/" .. pipeline_slug .. "/builds/" .. build_number .. "/rebuild"
+---Get pipeline details
+---@param pipeline_slug string Pipeline slug
+---@param callback function Callback(err, pipeline)
+function M.get_pipeline(pipeline_slug, callback)
+  local org_slug = require("buildkite.organizations").get_current()
+  if not org_slug then
+    callback({ message = "No organization configured" }, nil)
+    return
+  end
 
-    local config = M.get_config()
-    local org_config = config.organizations[org_name]
+  request("GET", "/organizations/" .. org_slug .. "/pipelines/" .. pipeline_slug, {}, function(err, response)
+    if err then
+      callback(err, nil)
+    else
+      callback(nil, response.body)
+    end
+  end)
+end
 
-    if not org_config then
-        error(string.format("Organization '%s' not configured", org_name))
+---List builds for a pipeline
+---@param callback function|nil Callback(err, builds) - if nil, opens picker
+function M.list_builds(callback)
+  local org_slug = require("buildkite.organizations").get_current()
+  local pipeline_slug = require("buildkite.pipeline").get_slug()
+
+  if not org_slug then
+    vim.notify("No organization configured. Run :BuildkiteAddOrg first.", vim.log.levels.ERROR)
+    return
+  end
+
+  if not pipeline_slug then
+    vim.notify("Could not detect pipeline. Run :BuildkiteSetPipeline <slug>", vim.log.levels.ERROR)
+    return
+  end
+
+  local path = "/organizations/" .. org_slug .. "/pipelines/" .. pipeline_slug .. "/builds"
+
+  request("GET", path .. "?per_page=20", {}, function(err, response)
+    if err then
+      if err.status == 404 then
+        vim.notify("Pipeline '" .. pipeline_slug .. "' not found. Use :BuildkiteSetPipeline to set correct slug.", vim.log.levels.WARN)
+      else
+        vim.notify("Failed to fetch builds: " .. err.message, vim.log.levels.ERROR)
+      end
+      if callback then callback(err, nil) end
+      return
     end
 
-    local url = config.api.endpoint .. endpoint
-    local headers = {
-        Authorization = "Bearer " .. org_config.token,
-        ["Content-Type"] = "application/json",
-    }
+    if callback then
+      callback(nil, response.body)
+    else
+      -- Show builds in picker
+      require("buildkite.ui.picker").show_builds(response.body)
+    end
+  end)
+end
 
-    local response = curl.put(url, {
-        headers = headers,
-        timeout = config.api.timeout
-    })
+---Trigger a new build
+---@param branch string|nil Branch to build (defaults to current git branch)
+function M.trigger_build(branch)
+  local org_slug = require("buildkite.organizations").get_current()
+  local pipeline_slug = require("buildkite.pipeline").get_slug()
 
-    if response.status ~= 200 then
-        error(string.format("Failed to rebuild: %d %s", response.status, response.body))
+  if not org_slug then
+    vim.notify("No organization configured. Run :BuildkiteAddOrg first.", vim.log.levels.ERROR)
+    return
+  end
+
+  if not pipeline_slug then
+    vim.notify("Could not detect pipeline. Run :BuildkiteSetPipeline <slug>", vim.log.levels.ERROR)
+    return
+  end
+
+  -- Get current branch if not specified
+  if not branch then
+    local git = require("buildkite.pipeline")
+    branch = git.get_current_branch() or "main"
+  end
+
+  local path = "/organizations/" .. org_slug .. "/pipelines/" .. pipeline_slug .. "/builds"
+
+  request("POST", path, {
+    body = {
+      commit = "HEAD",
+      branch = branch,
+      message = "Build triggered from Neovim",
+    },
+  }, function(err, response)
+    if err then
+      vim.notify("Failed to trigger build: " .. err.message, vim.log.levels.ERROR)
+      return
     end
 
-    local ok, decoded = pcall(vim.fn.json_decode, response.body)
-    if not ok then
-        error("Failed to decode JSON response: " .. decoded)
-    end
+    local build = response.body
+    vim.notify(string.format("Build #%d triggered on branch '%s'", build.number, branch), vim.log.levels.INFO)
 
-    return decoded
+    -- Optionally open build URL
+    if build.web_url then
+      vim.ui.select({ "Open in browser", "Copy URL", "Dismiss" }, {
+        prompt = "Build triggered:",
+      }, function(choice)
+        if choice == "Open in browser" then
+          vim.ui.open(build.web_url)
+        elseif choice == "Copy URL" then
+          vim.fn.setreg("+", build.web_url)
+          vim.notify("URL copied to clipboard", vim.log.levels.INFO)
+        end
+      end)
+    end
+  end)
+end
+
+---Validate API token
+---@param org_slug string Organization slug
+---@param token string API token
+---@param callback function Callback(valid, message)
+function M.validate_token(org_slug, token, callback)
+  local curl = require("plenary.curl")
+
+  curl.get(BASE_URL .. "/organizations/" .. org_slug, {
+    headers = {
+      ["Authorization"] = "Bearer " .. token,
+    },
+    callback = function(response)
+      vim.schedule(function()
+        if response.status == 200 then
+          callback(true, "Token is valid")
+        elseif response.status == 401 then
+          callback(false, "Invalid token")
+        elseif response.status == 404 then
+          callback(false, "Organization not found or no access")
+        else
+          callback(false, "Unexpected error: " .. response.status)
+        end
+      end)
+    end,
+  })
 end
 
 return M

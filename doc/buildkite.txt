@@ -1,0 +1,241 @@
+*buildkite.txt*  Neovim plugin for Buildkite pipelines
+
+Author:  mcncl
+License: MIT
+
+==============================================================================
+CONTENTS                                                   *buildkite-contents*
+
+    1. Introduction .......................... |buildkite-introduction|
+    2. Requirements .......................... |buildkite-requirements|
+    3. Setup ................................. |buildkite-setup|
+    4. Commands .............................. |buildkite-commands|
+    5. Configuration ......................... |buildkite-configuration|
+    6. Credentials ........................... |buildkite-credentials|
+    7. Pipeline Detection .................... |buildkite-pipeline-detection|
+    8. Linting ............................... |buildkite-linting|
+    9. Local Execution ....................... |buildkite-local-execution|
+
+==============================================================================
+1. INTRODUCTION                                        *buildkite-introduction*
+
+buildkite.nvim is a Neovim plugin for interacting with Buildkite pipelines.
+It provides commands for managing organizations, linting pipeline files,
+viewing builds, and running steps locally.
+
+==============================================================================
+2. REQUIREMENTS                                        *buildkite-requirements*
+
+Required:~
+    - Neovim >= 0.9.0
+    - plenary.nvim (https://github.com/nvim-lua/plenary.nvim)
+
+Optional:~
+    - Treesitter YAML parser (for linting) - install with `:TSInstall yaml`
+    - telescope.nvim (for enhanced picker UI)
+    - buildkite-agent (for local step execution)
+
+==============================================================================
+3. SETUP                                                      *buildkite-setup*
+
+Basic setup with lazy.nvim:
+>lua
+    {
+      "mcncl/buildkite.nvim",
+      dependencies = { "nvim-lua/plenary.nvim" },
+      config = function()
+        require("buildkite").setup()
+      end,
+    }
+<
+
+After installation, add an organization:
+>vim
+    :Buildkite org add my-org-slug
+<
+
+Run `:checkhealth buildkite` to verify your setup.
+
+==============================================================================
+4. COMMANDS                                                *buildkite-commands*
+
+All commands follow the pattern `:Buildkite <noun> <verb>`.
+Tab completion is available for all commands.
+
+------------------------------------------------------------------------------
+                                                       *:Buildkite-org-add*
+:Buildkite org add {slug}
+    Add or update an organization. Prompts for API token and storage
+    location (keychain or config file).
+
+                                                    *:Buildkite-org-switch*
+:Buildkite org switch
+    Switch between configured organizations using a picker.
+
+                                                      *:Buildkite-org-list*
+:Buildkite org list
+    List all configured organizations.
+
+                                                      *:Buildkite-org-info*
+:Buildkite org info
+    Show current organization and configuration details.
+
+------------------------------------------------------------------------------
+                                                  *:Buildkite-pipeline-lint*
+:Buildkite pipeline lint
+    Lint the current buffer as a Buildkite pipeline file. Diagnostics
+    are displayed inline using |vim.diagnostic|.
+
+                                                   *:Buildkite-pipeline-set*
+:Buildkite pipeline set {slug}
+    Override the auto-detected pipeline slug for this session.
+
+                                                  *:Buildkite-pipeline-info*
+:Buildkite pipeline info
+    Show the detected pipeline slug and file location.
+
+------------------------------------------------------------------------------
+                                                    *:Buildkite-build-list*
+:Buildkite build list
+    List recent builds for the current pipeline. Opens in telescope
+    if available, otherwise uses |vim.ui.select|.
+
+    Press <CR> to open build in browser.
+    Press <C-y> to copy build URL (telescope only).
+
+                                                 *:Buildkite-build-trigger*
+:Buildkite build trigger [{branch}]
+    Trigger a new build. If branch is not specified, uses the current
+    git branch.
+
+------------------------------------------------------------------------------
+                                                      *:Buildkite-step-run*
+:Buildkite step run
+    Run the pipeline step under the cursor locally. Requires
+    `buildkite-agent` to be installed.
+
+                                                   *:Buildkite-step-select*
+:Buildkite step select
+    Show a picker to select and run a pipeline step locally.
+
+==============================================================================
+5. CONFIGURATION                                      *buildkite-configuration*
+
+                                                          *buildkite.setup()*
+require("buildkite").setup({opts})
+
+    Configure buildkite.nvim. All options are optional.
+
+    Options:~
+
+    lint_on_save (boolean, default: true)~
+        Automatically lint pipeline files when saved.
+
+    default_org (string, default: nil)~
+        Default organization slug. If not set, reads from config file.
+
+    config_path (string, default: stdpath("config") .. "/buildkite.json")~
+        Path to the configuration file for storing credentials and settings.
+
+    keymaps (table|false, default: see below)~
+        Keymap configuration. Set to `false` to disable all keymaps.
+>lua
+        keymaps = {
+          lint = "<leader>bl",      -- Lint current file
+          run_step = "<leader>br",  -- Run step at cursor
+          builds = "<leader>bb",    -- List builds
+        }
+<
+    notifications (table)~
+        Notification settings.
+>lua
+        notifications = {
+          enabled = true,
+          level = vim.log.levels.INFO,
+        }
+<
+
+==============================================================================
+6. CREDENTIALS                                          *buildkite-credentials*
+
+API tokens are loaded with the following precedence (highest first):
+
+1. Environment variables~
+   - `BUILDKITE_TOKEN_<ORG_SLUG>` - organization-specific (uppercase,
+     hyphens replaced with underscores)
+   - `BUILDKITE_API_TOKEN` - generic fallback
+
+2. macOS Keychain~
+   - Tokens stored via `:Buildkite org add` with keychain option
+   - Only available on macOS
+
+3. Config file~
+   - Stored in `config_path` (default: ~/.config/nvim/buildkite.json)
+   - Created automatically when adding an organization
+
+Example environment setup:
+>bash
+    export BUILDKITE_TOKEN_MY_ORG="bkua_xxx..."
+    export BUILDKITE_API_TOKEN="bkua_yyy..."  # fallback
+<
+
+==============================================================================
+7. PIPELINE DETECTION                            *buildkite-pipeline-detection*
+
+The plugin auto-detects the pipeline slug in this order:
+
+1. Manual override - set via `:Buildkite pipeline set`
+2. Project config - `.buildkite.lua` file returning `{ pipeline = "slug" }`
+3. Git remote - extracts repository name from origin URL
+4. Directory name - uses current working directory basename
+
+If a 404 error occurs when fetching builds, use `:Buildkite pipeline set`
+to specify the correct pipeline slug.
+
+Project-local configuration example (.buildkite.lua):
+>lua
+    return {
+      pipeline = "my-pipeline-slug"
+    }
+<
+
+==============================================================================
+8. LINTING                                                  *buildkite-linting*
+
+Pipeline linting uses treesitter to parse YAML and validate against
+Buildkite's pipeline schema. Install the YAML parser with:
+>vim
+    :TSInstall yaml
+<
+
+Validated rules:~
+    - `steps` key is required and must be a non-empty array
+    - Valid step types: command, block, wait, trigger, input, group
+    - Required fields for step types (e.g., trigger steps need `trigger`)
+    - Basic structure validation
+
+Diagnostics are displayed inline using |vim.diagnostic|. Errors and
+warnings appear in the sign column and can be navigated with:
+>vim
+    :lua vim.diagnostic.goto_next()
+    :lua vim.diagnostic.goto_prev()
+<
+
+==============================================================================
+9. LOCAL EXECUTION                                  *buildkite-local-execution*
+
+Run pipeline steps locally for testing. Requires `buildkite-agent` to be
+installed and in your PATH.
+
+Installation: https://buildkite.com/docs/agent/v3/installation
+
+Limitations:~
+    - Plugins are skipped (with a warning)
+    - Artifact uploads are not performed
+    - Environment variables from the step are applied
+
+Steps are executed in a terminal buffer at the bottom of the screen.
+The exit code is reported when the command completes.
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
