@@ -34,16 +34,13 @@ function M.check()
     })
   end
 
-  -- Check buildkite-agent
+  -- Check buildkite-agent (optional)
   local runner = require("buildkite.runner")
   if runner.has_agent() then
     local version = vim.fn.system("buildkite-agent --version 2>/dev/null")
     health.ok("buildkite-agent is installed: " .. vim.trim(version):gsub("\n.*", ""))
   else
-    health.warn("buildkite-agent is not installed", {
-      "Required for local step execution",
-      "Install from: https://buildkite.com/docs/agent/v3/installation",
-    })
+    health.info("buildkite-agent is not installed (optional, for future features)")
   end
 
   -- Check telescope (optional)

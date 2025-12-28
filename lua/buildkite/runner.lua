@@ -108,7 +108,8 @@ function M._parse_step_node(node, bufnr)
         if key == "label" and value_node then
           step.label = vim.treesitter.get_node_text(value_node, bufnr)
         elseif key == "command" and value_node then
-          step.command = vim.treesitter.get_node_text(value_node, bufnr)
+          -- command can be a string or an array
+          step.command = M._parse_command_value(value_node, bufnr)
         elseif key == "commands" and value_node then
           step.commands = M._parse_string_array(value_node, bufnr)
         elseif key == "env" and value_node then
@@ -121,6 +122,26 @@ function M._parse_step_node(node, bufnr)
   end
 
   return step
+end
+
+---Parse command value (can be string or array)
+---@param node TSNode
+---@param bufnr number
+---@return string|string[]
+function M._parse_command_value(node, bufnr)
+  -- Check if it's a block sequence (array)
+  local sequence = node
+  if node:type() == "block_node" then
+    for child in node:iter_children() do
+      if child:type() == "block_sequence" then
+        -- It's an array, parse as such
+        return M._parse_string_array(node, bufnr)
+      end
+    end
+  end
+
+  -- It's a scalar string
+  return vim.treesitter.get_node_text(node, bufnr)
 end
 
 ---Parse a YAML array of strings
@@ -249,11 +270,6 @@ end
 ---Run a step locally
 ---@param step BuildkiteStep
 function M.run_step(step)
-  if not M.has_agent() then
-    vim.notify("buildkite-agent not found in PATH", vim.log.levels.ERROR)
-    return
-  end
-
   local commands = M.get_step_commands(step)
   if #commands == 0 then
     vim.notify("Step has no commands to run", vim.log.levels.WARN)
@@ -261,20 +277,26 @@ function M.run_step(step)
   end
 
   -- Warn about plugins
-  if step.plugins and #step.plugins > 0 then
+  if step.plugins and next(step.plugins) then
     vim.notify("Step has plugins which will be skipped in local execution", vim.log.levels.WARN)
   end
 
-  -- Build environment
-  local env_str = ""
+  -- Build environment exports
+  local env_exports = {}
   if step.env then
     for k, v in pairs(step.env) do
-      env_str = env_str .. string.format("export %s=%q; ", k, v)
+      table.insert(env_exports, string.format("export %s=%s", k, vim.fn.shellescape(v)))
     end
   end
 
-  -- Combine commands
-  local cmd = env_str .. table.concat(commands, " && ")
+  -- Build the full command
+  local cmd_parts = {}
+  if #env_exports > 0 then
+    table.insert(cmd_parts, table.concat(env_exports, " && "))
+  end
+  table.insert(cmd_parts, table.concat(commands, " && "))
+
+  local cmd = table.concat(cmd_parts, " && ")
   local label = step.label or "step"
 
   -- Open terminal buffer
