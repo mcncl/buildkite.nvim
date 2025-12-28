@@ -7,68 +7,113 @@ local BASE_URL = "https://api.buildkite.com/v2"
 ---@field message string Error message
 ---@field body string|nil Response body
 
+---Run curl command asynchronously
+---@param args string[] curl arguments
+---@param callback function Callback(err, response)
+local function curl_request(args, callback)
+  local Job = require("plenary.job")
+
+  local stdout_data = {}
+  local stderr_data = {}
+
+  Job:new({
+    command = "curl",
+    args = args,
+    on_stdout = function(_, data)
+      table.insert(stdout_data, data)
+    end,
+    on_stderr = function(_, data)
+      table.insert(stderr_data, data)
+    end,
+    on_exit = function(_, return_val)
+      vim.schedule(function()
+        local body = table.concat(stdout_data, "\n")
+
+        -- Parse the status code from the last line (we use -w to append it)
+        local status_code = tonumber(body:match("HTTP_STATUS:(%d+)$"))
+        body = body:gsub("HTTP_STATUS:%d+$", "")
+
+        if return_val ~= 0 then
+          callback({ status = 0, message = "curl failed: " .. table.concat(stderr_data, "\n") }, nil)
+          return
+        end
+
+        callback(nil, { status = status_code or 0, body = body })
+      end)
+    end,
+  }):start()
+end
+
 ---@param method string HTTP method
 ---@param path string API path (without base URL)
----@param opts table|nil Options: body, org_slug
+---@param opts table|nil Options: body, org_slug, token
 ---@param callback function Callback(err, response)
 local function request(method, path, opts, callback)
   opts = opts or {}
-  local org_slug = opts.org_slug or require("buildkite.organizations").get_current()
 
-  if not org_slug then
-    callback({ status = 0, message = "No organization configured" }, nil)
-    return
+  local token = opts.token
+  if not token then
+    local org_slug = opts.org_slug or require("buildkite.organizations").get_current()
+
+    if not org_slug then
+      callback({ status = 0, message = "No organization configured" }, nil)
+      return
+    end
+
+    local credentials = require("buildkite.credentials")
+    local cred, cred_err = credentials.get_token(org_slug)
+    if not cred then
+      callback({ status = 0, message = cred_err or "No credentials found" }, nil)
+      return
+    end
+    token = cred.token
   end
 
-  local credentials = require("buildkite.credentials")
-  local cred, cred_err = credentials.get_token(org_slug)
-  if not cred then
-    callback({ status = 0, message = cred_err or "No credentials found" }, nil)
-    return
-  end
-
-  local curl = require("plenary.curl")
   local url = BASE_URL .. path
 
-  local request_opts = {
-    url = url,
-    method = method,
-    headers = {
-      ["Authorization"] = "Bearer " .. cred.token,
-      ["Content-Type"] = "application/json",
-    },
-    callback = function(response)
-      vim.schedule(function()
-        if response.status >= 200 and response.status < 300 then
-          local body = nil
-          if response.body and response.body ~= "" then
-            local ok, decoded = pcall(vim.json.decode, response.body)
-            body = ok and decoded or response.body
-          end
-          callback(nil, { status = response.status, body = body })
-        else
-          local err_msg = "Request failed"
-          if response.body and response.body ~= "" then
-            local ok, decoded = pcall(vim.json.decode, response.body)
-            if ok and decoded and decoded.message then
-              err_msg = decoded.message
-            end
-          end
-          callback({
-            status = response.status,
-            message = err_msg,
-            body = response.body,
-          }, nil)
-        end
-      end)
-    end,
+  local args = {
+    "-s",
+    "-X", method,
+    "-H", "Authorization: Bearer " .. token,
+    "-H", "Content-Type: application/json",
+    "-w", "HTTP_STATUS:%{http_code}",
   }
 
   if opts.body then
-    request_opts.body = vim.json.encode(opts.body)
+    table.insert(args, "-d")
+    table.insert(args, vim.json.encode(opts.body))
   end
 
-  curl.request(request_opts)
+  table.insert(args, url)
+
+  curl_request(args, function(err, response)
+    if err then
+      callback(err, nil)
+      return
+    end
+
+    if response.status >= 200 and response.status < 300 then
+      local body = nil
+      if response.body and response.body ~= "" then
+        local ok, decoded = pcall(vim.json.decode, response.body)
+        body = ok and decoded or response.body
+      end
+      callback(nil, { status = response.status, body = body })
+    else
+      local err_msg = "Request failed"
+      if response.body and response.body ~= "" then
+        local ok, decoded = pcall(vim.json.decode, response.body)
+        if ok and decoded and decoded.message then
+          err_msg = decoded.message
+        end
+      end
+      callback({
+        status = response.status,
+        message = err_msg,
+        body = response.body,
+      }, nil)
+    end
+  end)
 end
 
 ---List pipelines for the current organization
@@ -115,21 +160,21 @@ function M.list_builds(callback)
   local pipeline_slug = require("buildkite.pipeline").get_slug()
 
   if not org_slug then
-    vim.notify("No organization configured. Run :BuildkiteAddOrg first.", vim.log.levels.ERROR)
+    vim.notify("No organization configured. Run :Buildkite org add first.", vim.log.levels.ERROR)
     return
   end
 
   if not pipeline_slug then
-    vim.notify("Could not detect pipeline. Run :BuildkiteSetPipeline <slug>", vim.log.levels.ERROR)
+    vim.notify("Could not detect pipeline. Run :Buildkite pipeline set <slug>", vim.log.levels.ERROR)
     return
   end
 
-  local path = "/organizations/" .. org_slug .. "/pipelines/" .. pipeline_slug .. "/builds"
+  local path = "/organizations/" .. org_slug .. "/pipelines/" .. pipeline_slug .. "/builds?per_page=20"
 
-  request("GET", path .. "?per_page=20", {}, function(err, response)
+  request("GET", path, {}, function(err, response)
     if err then
       if err.status == 404 then
-        vim.notify("Pipeline '" .. pipeline_slug .. "' not found. Use :BuildkiteSetPipeline to set correct slug.", vim.log.levels.WARN)
+        vim.notify("Pipeline '" .. pipeline_slug .. "' not found. Use :Buildkite pipeline set <slug>", vim.log.levels.WARN)
       else
         vim.notify("Failed to fetch builds: " .. err.message, vim.log.levels.ERROR)
       end
@@ -140,7 +185,6 @@ function M.list_builds(callback)
     if callback then
       callback(nil, response.body)
     else
-      -- Show builds in picker
       require("buildkite.ui.picker").show_builds(response.body)
     end
   end)
@@ -153,16 +197,15 @@ function M.trigger_build(branch)
   local pipeline_slug = require("buildkite.pipeline").get_slug()
 
   if not org_slug then
-    vim.notify("No organization configured. Run :BuildkiteAddOrg first.", vim.log.levels.ERROR)
+    vim.notify("No organization configured. Run :Buildkite org add first.", vim.log.levels.ERROR)
     return
   end
 
   if not pipeline_slug then
-    vim.notify("Could not detect pipeline. Run :BuildkiteSetPipeline <slug>", vim.log.levels.ERROR)
+    vim.notify("Could not detect pipeline. Run :Buildkite pipeline set <slug>", vim.log.levels.ERROR)
     return
   end
 
-  -- Get current branch if not specified
   if not branch then
     local git = require("buildkite.pipeline")
     branch = git.get_current_branch() or "main"
@@ -185,7 +228,6 @@ function M.trigger_build(branch)
     local build = response.body
     vim.notify(string.format("Build #%d triggered on branch '%s'", build.number, branch), vim.log.levels.INFO)
 
-    -- Optionally open build URL
     if build.web_url then
       vim.ui.select({ "Open in browser", "Copy URL", "Dismiss" }, {
         prompt = "Build triggered:",
@@ -206,26 +248,20 @@ end
 ---@param token string API token
 ---@param callback function Callback(valid, message)
 function M.validate_token(org_slug, token, callback)
-  local curl = require("plenary.curl")
+  request("GET", "/organizations/" .. org_slug, { token = token }, function(err, response)
+    if err then
+      if err.status == 401 then
+        callback(false, "Invalid token")
+      elseif err.status == 404 then
+        callback(false, "Organization not found or no access")
+      else
+        callback(false, err.message or "Unknown error")
+      end
+      return
+    end
 
-  curl.get(BASE_URL .. "/organizations/" .. org_slug, {
-    headers = {
-      ["Authorization"] = "Bearer " .. token,
-    },
-    callback = function(response)
-      vim.schedule(function()
-        if response.status == 200 then
-          callback(true, "Token is valid")
-        elseif response.status == 401 then
-          callback(false, "Invalid token")
-        elseif response.status == 404 then
-          callback(false, "Organization not found or no access")
-        else
-          callback(false, "Unexpected error: " .. response.status)
-        end
-      end)
-    end,
-  })
+    callback(true, "Token is valid")
+  end)
 end
 
 return M
