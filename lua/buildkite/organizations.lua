@@ -144,11 +144,27 @@ end
 ---List all configured organizations
 ---@return string[]
 function M.list()
+  local orgs = {}
+  local seen = {}
+
+  -- Add orgs from credentials config file
   local available = require("buildkite.credentials").list_available()
-  local orgs = vim.tbl_keys(available)
-  return vim.tbl_filter(function(org)
-    return org ~= "_default"
-  end, orgs)
+  for org in pairs(available) do
+    if org ~= "_default" and not seen[org] then
+      table.insert(orgs, org)
+      seen[org] = true
+    end
+  end
+
+  -- Add current org if set via default_org config
+  local config = require("buildkite.config").get()
+  if config.default_org and not seen[config.default_org] then
+    table.insert(orgs, config.default_org)
+    seen[config.default_org] = true
+  end
+
+  table.sort(orgs)
+  return orgs
 end
 
 ---Show current configuration info
@@ -156,23 +172,37 @@ function M.show_info()
   local current = M.get_current()
   local pipeline = require("buildkite.pipeline").get_slug()
   local orgs = M.list()
+  local credentials = require("buildkite.credentials")
 
   local lines = {
     "Buildkite Configuration",
     "=======================",
     "",
     "Current Organization: " .. (current or "(none)"),
-    "Detected Pipeline:    " .. (pipeline or "(none)"),
-    "",
-    "Configured Organizations:",
   }
+
+  -- Show credential source for current org
+  if current then
+    local cred, _ = credentials.get_token(current)
+    if cred then
+      table.insert(lines, "  Token source: " .. cred.source)
+    else
+      table.insert(lines, "  Token source: (no token found)")
+    end
+  end
+
+  table.insert(lines, "Detected Pipeline:    " .. (pipeline or "(none)"))
+  table.insert(lines, "")
+  table.insert(lines, "Configured Organizations:")
 
   if #orgs == 0 then
     table.insert(lines, "  (none)")
   else
     for _, org in ipairs(orgs) do
       local marker = org == current and " *" or ""
-      table.insert(lines, "  - " .. org .. marker)
+      local cred, _ = credentials.get_token(org)
+      local source = cred and (" [" .. cred.source:match("^(%w+)") .. "]") or " [no token]"
+      table.insert(lines, "  - " .. org .. marker .. source)
     end
   end
 
