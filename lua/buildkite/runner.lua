@@ -130,7 +130,6 @@ end
 ---@return string|string[]
 function M._parse_command_value(node, bufnr)
   -- Check if it's a block sequence (array)
-  local sequence = node
   if node:type() == "block_node" then
     for child in node:iter_children() do
       if child:type() == "block_sequence" then
