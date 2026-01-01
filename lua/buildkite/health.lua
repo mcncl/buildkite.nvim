@@ -63,7 +63,7 @@ function M.check()
     end
   else
     health.warn("No organizations configured", {
-      "Add an organization with: :BuildkiteAddOrg <slug>",
+      "Add an organization with: :Buildkite org add <slug>",
     })
   end
 
@@ -76,7 +76,7 @@ function M.check()
     else
       health.error("No credentials found for organization '" .. current_org .. "'", {
         "Set BUILDKITE_API_TOKEN environment variable, or",
-        "Run :BuildkiteAddOrg " .. current_org,
+        "Run :Buildkite org add " .. current_org,
       })
     end
   end

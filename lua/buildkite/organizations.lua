@@ -115,7 +115,7 @@ function M.switch()
   end, orgs)
 
   if #orgs == 0 then
-    vim.notify("No organizations configured. Run :BuildkiteAddOrg <slug> first.", vim.log.levels.WARN)
+    vim.notify("No organizations configured. Run :Buildkite org add <slug> first.", vim.log.levels.WARN)
     return
   end
 
