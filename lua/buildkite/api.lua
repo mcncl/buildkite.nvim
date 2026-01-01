@@ -153,6 +153,60 @@ function M.get_pipeline(pipeline_slug, callback)
   end)
 end
 
+---Handle 404 error by prompting user for correct pipeline slug
+---@param detected_slug string The slug that was tried
+---@param retry_fn function Function to retry after setting correct slug
+local function handle_pipeline_404(detected_slug, retry_fn)
+  vim.notify("Pipeline '" .. detected_slug .. "' not found.", vim.log.levels.WARN)
+
+  vim.ui.select({ "Enter correct slug", "List available pipelines", "Cancel" }, {
+    prompt = "Pipeline not found. What would you like to do?",
+  }, function(choice)
+    if choice == "Enter correct slug" then
+      vim.ui.input({
+        prompt = "Enter pipeline slug: ",
+        default = detected_slug,
+      }, function(slug)
+        if slug and slug ~= "" then
+          local pipeline = require("buildkite.pipeline")
+          pipeline.set_override(slug)
+          -- Cache for future use
+          local remote = pipeline.get_git_remote()
+          if remote then
+            pipeline.cache_slug(remote, slug)
+          end
+          -- Retry the operation
+          if retry_fn then
+            retry_fn()
+          end
+        end
+      end)
+    elseif choice == "List available pipelines" then
+      M.list_pipelines(function(err, pipelines)
+        if err then
+          vim.notify("Failed to list pipelines: " .. (err.message or "unknown error"), vim.log.levels.ERROR)
+          return
+        end
+        if not pipelines or #pipelines == 0 then
+          vim.notify("No pipelines found in this organization", vim.log.levels.WARN)
+          return
+        end
+        require("buildkite.ui.picker").show_pipelines(pipelines, function(slug)
+          local pipeline = require("buildkite.pipeline")
+          pipeline.set_override(slug)
+          local remote = pipeline.get_git_remote()
+          if remote then
+            pipeline.cache_slug(remote, slug)
+          end
+          if retry_fn then
+            retry_fn()
+          end
+        end)
+      end)
+    end
+  end)
+end
+
 ---List builds for a pipeline
 ---@param callback function|nil Callback(err, builds) - if nil, opens picker
 function M.list_builds(callback)
@@ -174,11 +228,13 @@ function M.list_builds(callback)
   request("GET", path, {}, function(err, response)
     if err then
       if err.status == 404 then
-        vim.notify("Pipeline '" .. pipeline_slug .. "' not found. Use :Buildkite pipeline set <slug>", vim.log.levels.WARN)
+        handle_pipeline_404(pipeline_slug, function()
+          M.list_builds(callback)
+        end)
       else
         vim.notify("Failed to fetch builds: " .. err.message, vim.log.levels.ERROR)
+        if callback then callback(err, nil) end
       end
-      if callback then callback(err, nil) end
       return
     end
 
@@ -221,7 +277,13 @@ function M.trigger_build(branch)
     },
   }, function(err, response)
     if err then
-      vim.notify("Failed to trigger build: " .. err.message, vim.log.levels.ERROR)
+      if err.status == 404 then
+        handle_pipeline_404(pipeline_slug, function()
+          M.trigger_build(branch)
+        end)
+      else
+        vim.notify("Failed to trigger build: " .. err.message, vim.log.levels.ERROR)
+      end
       return
     end
 
